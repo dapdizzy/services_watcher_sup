@@ -1,6 +1,8 @@
 defmodule Service.Watcher do
   use GenServer
 
+  alias Service.Def
+
   defstruct [:services]
   @moduledoc """
   Documentation for Service.Watcher.
@@ -106,13 +108,14 @@ defmodule Service.Watcher do
     end
   end
 
-  def service_to_string(service) do
-    case service do
-      {service_name, mode} ->
-        "Watching [#{service_name}] to be #{mode} every #{Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
-      {service_name, mode, interval} ->
-        "Watching [#{service_name}] to be #{mode} every #{interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
-    end
+  def service_to_string(%Def{service_name: service_name, mode: mode, timeout: interval}) do
+    "Watching [#{service_name}] to be #{mode} every #{interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
+    # case service do
+    #   {service_name, mode} ->
+    #     "Watching [#{service_name}] to be #{mode} every #{Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
+    #   {service_name, mode, interval} ->
+    #     "Watching [#{service_name}] to be #{mode} every #{interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
+    # end
   end
 
   #API
@@ -146,13 +149,14 @@ defmodule Service.Watcher do
 
   #Callbacks
   def init([services]) do
-    for service <- services do
-      case service do
-        {service_name, mode} ->
-          start_watching service_name, mode, Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
-        {service_name, mode, interval} ->
-          start_watching service_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
-      end
+    for %Def{service_name: service_name, mode: mode, timeout: interval} <- services do
+      start_watching service_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
+      # case service do
+      #   {service_name, mode} ->
+      #     start_watching service_name, mode, Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
+      #   {service_name, mode, interval} ->
+      #     start_watching service_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
+      # end
     end
     {:ok, %Service.Watcher{services: services}}
   end
@@ -165,7 +169,7 @@ defmodule Service.Watcher do
 
   def handle_cast({:add_service, service_name, mode, timeout}, %Service.Watcher{services: services} = state) do
     start_watching service_name, mode, timeout
-    {:noreply, %{state|services: [{service_name, mode, timeout}|services]}}
+    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout}|services]}}
   end
 
   def handle_cast({:stop_watching, service_name}, %Service.Watcher{services: services} = state) do
@@ -184,25 +188,27 @@ defmodule Service.Watcher do
   end
 
   def handle_cast(:pause_all, %Service.Watcher{services: services} = state) do
-    for service <- services do
-      case service do
-        {service_name, _} ->
-          service_name |> pause_timer_job()
-        {service_name, _, _} ->
-          service_name |> pause_timer_job()
-      end
+    for %Def{service_name: service_name} <- services do
+      service_name |> pause_timer_job()
+      # case service do
+      #   {service_name, _} ->
+      #     service_name |> pause_timer_job()
+      #   {service_name, _, _} ->
+      #     service_name |> pause_timer_job()
+      # end
     end
     {:noreply, state}
   end
 
   def handle_cast(:resume_all, %Service.Watcher{services: services} = state) do
-    for service <- services do
-      case service do
-        {service_name, _} ->
-          service_name |> resume_timer_job()
-        {service_name, _, _} ->
-          service_name |> resume_timer_job()
-      end
+    for %Def{service_name: service_name} <- services do
+      service_name |> resume_timer_job()
+      # case service do
+      #   {service_name, _} ->
+      #     service_name |> resume_timer_job()
+      #   {service_name, _, _} ->
+      #     service_name |> resume_timer_job()
+      # end
     end
     {:noreply, state}
   end
