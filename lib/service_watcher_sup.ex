@@ -37,11 +37,41 @@ defmodule Service.Watcher do
         unless !prev_state || prev_state == expected_state do
           send_message "Service *#{service_name}* is now *#{expected_state}*", notify_destination
         end
+        # Update args (prev_status in particular) to maintain proper status change handling.
+        service_name |> update_timer_state(
+        %TimerJob
+        {
+          args:
+            [
+              service_name,
+              mode,
+              expected_state,
+              expected_state,
+              notify_destination,
+              watch_interval,
+              (if expiration_period == :infinity || !prev_state || prev_state != interim_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)
+            ]
+        })
       ^interim_state ->
         if !prev_state || prev_state != interim_state do
           send_message "Service *#{service_name}* is now *#{ingify interim_state}*", notify_destination
         end
         # TODO: possible use update_interval_period here to adjust interval/period of a TimerJob
+        # Update args list to allow proper handling of status changes (we need to track prev_status and stuff).
+        service_name |> update_interval_period(
+        %TimerJob
+        {
+          args:
+            [
+              service_name,
+              mode,
+              expected_state,
+              interim_state,
+              notify_destination,
+              watch_interval,
+              (if expiration_period == :infinity || !prev_state || prev_state != interim_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)
+            ]
+        })
         # :timer.apply_after watch_interval, __MODULE__, :watch_service, [service_name, mode, expected_state, interim_state, notify_destination, watch_interval, (if expiration_period == :infinity || !prev_state || prev_state != interim_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)]
       other_state ->
         if !prev_state || prev_state != other_state do
@@ -54,9 +84,26 @@ defmodule Service.Watcher do
         end
         # TODO: possible use update_interval_period here to adjust interval/period of a TimerJob
         # :timer.apply_after watch_interval, __MODULE__, :watch_service, [service_name, mode, expected_state, other_state, notify_destination, watch_interval, (if expiration_period == :infinity || !prev_state || prev_state != other_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)]
+        # Update args in order to maintain proper prev_status to handle status changes gracefuly.
+        service_name |> update_timer_state(
+        %TimerJob
+        {
+          args:
+            [
+              service_name,
+              mode,
+              expected_state,
+              other_state,
+              notify_destination,
+              watch_interval,
+              (if expiration_period == :infinity || !prev_state || prev_state != other_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)
+            ]
+        })
     end
     # debug
-    send_message "I'm watching *#{service_name}* to be *#{mode}*", notify_destination
+    if Application.get_env(:service_watcher_sup, :debug, false) do
+      send_message "I'm watching *#{service_name}* to be *#{mode}*", notify_destination
+    end
   end
 
   def service_to_string(service) do
@@ -79,6 +126,22 @@ defmodule Service.Watcher do
 
   def stop_watching(server \\ __MODULE__, service_name) do
     server |> GenServer.cast({:stop_watching, service_name})
+  end
+
+  def pause(server \\ __MODULE__, service_name) do
+    server |> GenServer.cast({:pause, service_name})
+  end
+
+  def resume(server \\ __MODULE__, service_name) do
+    server |> GenServer.cast({:resume, service_name})
+  end
+
+  def pause_all(server \\ __MODULE__) do
+    server |> GenServer.cast(:pause_all)
+  end
+
+  def resume_all(server \\ __MODULE__) do
+    server |> GenServer.cast(:resume_all)
   end
 
   #Callbacks
@@ -110,6 +173,40 @@ defmodule Service.Watcher do
     {:noreply, %{state|services: services |> Enum.reject(&(&1 |> elem(0) == service_name))}}
   end
 
+  def handle_cast({:pause, service_name}, %Service.Watcher{} = state) do
+    service_name |> pause_timer_job()
+    {:noreply, state}
+  end
+
+  def handle_cast({:resume, service_name}, %Service.Watcher{} = state) do
+    service_name |> resume_timer_job()
+    {:noreply, state}
+  end
+
+  def handle_cast(:pause_all, %Service.Watcher{services: services} = state) do
+    for service <- services do
+      case service do
+        {service_name, _} ->
+          service_name |> pause_timer_job()
+        {service_name, _, _} ->
+          service_name |> pause_timer_job()
+      end
+    end
+    {:noreply, state}
+  end
+
+  def handle_cast(:resume_all, %Service.Watcher{services: services} = state) do
+    for service <- services do
+      case service do
+        {service_name, _} ->
+          service_name |> resume_timer_job()
+        {service_name, _, _} ->
+          service_name |> resume_timer_job()
+      end
+    end
+    {:noreply, state}
+  end
+
   # Helpers
   def ingify(str), do: unless str |> String.downcase |> String.ends_with?(["ing", "ed"]), do: (if ~r/[^p]{1}p$/ |> Regex.match?(str), do: str <> "p", else: str) <> "ing", else: str
   def send_message(message, destination) do
@@ -119,12 +216,24 @@ defmodule Service.Watcher do
   def service_name_alias(service_name) do
     {:via, Registry, {NamesRegistry, service_name}}
   end
+  def update_timer_state(service_name, new_state = %TimerJob{}) do
+    service_name |> service_name_alias()
+      |> TimerJob.update_state(new_state)
+  end
   def update_interval_period(service_name, interval, period \\ nil) do
     service_name |> service_name_alias()
       |> TimerJob.update_state(%TimerJob{interval: interval, period: period})
   end
   def stop_timer_job(service_name) do
     service_name |> service_name_alias()
-    |> Process.exit(:kill)
+      |> GenServer.stop()
+  end
+  def pause_timer_job(service_name) do
+    service_name |> service_name_alias()
+      |> TimerJob.stop()
+  end
+  def resume_timer_job(service_name) do
+    service_name |> service_name_alias()
+      |> TimerJob.run()
   end
 end
