@@ -123,6 +123,10 @@ defmodule Service.Watcher do
     server |> GenServer.call(:services)
   end
 
+  def get_services_def(server \\ __MODULE__) do
+    server |> GenServer.call(:services_def)
+  end
+
   def add_service(server \\ __MODULE__, service_name, mode, timeout \\ Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)) do
     server |> GenServer.cast({:add_service, service_name, mode, timeout})
   end
@@ -163,13 +167,18 @@ defmodule Service.Watcher do
 
   def handle_call(:services, _from, %Service.Watcher{services: services} = state) do
     services_definition_string =
-      for service <- services, into: "", do: service_to_string(service)
+      (for service <- services, do: to_string(service)) #service_to_string(service)
+        |> Enum.join("\r\n")
     {:reply, services_definition_string, state}
+  end
+
+  def handle_call(:services_def, _from, %Service.Watcher{services: services} = state) do
+    {:reply, services, state}
   end
 
   def handle_cast({:add_service, service_name, mode, timeout}, %Service.Watcher{services: services} = state) do
     start_watching service_name, mode, timeout
-    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout}|services]}}
+    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout, state: :active}|services]}}
   end
 
   def handle_cast({:stop_watching, service_name}, %Service.Watcher{services: services} = state) do
@@ -177,40 +186,47 @@ defmodule Service.Watcher do
     {:noreply, %{state|services: services |> Enum.reject(&(&1 |> elem(0) == service_name))}}
   end
 
-  def handle_cast({:pause, service_name}, %Service.Watcher{} = state) do
+  def handle_cast({:pause, service_name}, %Service.Watcher{services: services} = state) do
     service_name |> pause_timer_job()
-    {:noreply, state}
+    {:noreply, %{state|services: services |> Enum.map(
+      fn
+        %Def{service_name: ^service_name} = service ->
+          %{service|state: :inactive}
+        ;
+        service -> service
+      end
+    )}}
   end
 
-  def handle_cast({:resume, service_name}, %Service.Watcher{} = state) do
+  def handle_cast({:resume, service_name}, %Service.Watcher{services: services} = state) do
     service_name |> resume_timer_job()
-    {:noreply, state}
+    {:noreply, %{state|services: services |> Enum.map(
+      fn
+        %Def{service_name: ^service_name} = service ->
+          %{service|state: :active}
+        ;
+        service ->
+          service
+      end
+    )}}
   end
 
   def handle_cast(:pause_all, %Service.Watcher{services: services} = state) do
-    for %Def{service_name: service_name} <- services do
-      service_name |> pause_timer_job()
-      # case service do
-      #   {service_name, _} ->
-      #     service_name |> pause_timer_job()
-      #   {service_name, _, _} ->
-      #     service_name |> pause_timer_job()
-      # end
-    end
-    {:noreply, state}
+    upd_services =
+      for %Def{service_name: service_name} = service <- services do
+        service_name |> pause_timer_job()
+        %{service|state: :inactive}
+      end
+    {:noreply, %{state|services: upd_services}}
   end
 
   def handle_cast(:resume_all, %Service.Watcher{services: services} = state) do
-    for %Def{service_name: service_name} <- services do
-      service_name |> resume_timer_job()
-      # case service do
-      #   {service_name, _} ->
-      #     service_name |> resume_timer_job()
-      #   {service_name, _, _} ->
-      #     service_name |> resume_timer_job()
-      # end
-    end
-    {:noreply, state}
+    upd_services =
+      for %Def{service_name: service_name} = service <- services do
+        service_name |> resume_timer_job()
+        %{service|state: :active}
+      end
+    {:noreply, %{state|services: upd_services}}
   end
 
   # Helpers
