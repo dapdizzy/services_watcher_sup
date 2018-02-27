@@ -183,7 +183,7 @@ defmodule Service.Watcher do
 
   def handle_cast({:stop_watching, service_name}, %Service.Watcher{services: services} = state) do
     service_name |> stop_timer_job()
-    {:noreply, %{state|services: services |> Enum.reject(&(&1 |> elem(0) == service_name))}}
+    {:noreply, %{state|services: services |> Enum.reject(fn %Def{service_name: ^service_name} -> true; _ -> false end)}}
   end
 
   def handle_cast({:pause, service_name}, %Service.Watcher{services: services} = state) do

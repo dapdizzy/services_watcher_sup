@@ -1,6 +1,8 @@
 %{
   "amqp": {:hex, :amqp, "0.2.4", "23f888b3f06147a93a71ca57b855d1d5da6ea1aa1214adfc0bec7398c268c999", [:mix], [{:amqp_client, "~> 3.6.8", [hex: :amqp_client, optional: false]}, {:rabbit_common, "~> 3.6.8", [hex: :rabbit_common, optional: false]}]},
   "amqp_client": {:hex, :amqp_client, "3.6.15", "a171f78870adc9f6b7294a2974c30ea0817f0bbcee63acb0c469650452134608", [:make, :rebar3], [{:rabbit_common, "3.6.15", [hex: :rabbit_common, optional: false]}]},
+  "earmark": {:hex, :earmark, "1.2.4", "99b637c62a4d65a20a9fb674b8cffb8baa771c04605a80c911c4418c69b75439", [:mix], []},
+  "ex_doc": {:hex, :ex_doc, "0.18.3", "f4b0e4a2ec6f333dccf761838a4b253d75e11f714b85ae271c9ae361367897b7", [:mix], [{:earmark, "~> 1.1", [hex: :earmark, optional: false]}]},
   "rabbit_common": {:hex, :rabbit_common, "3.6.15", "ae0b822c206e4a4d6a176a47fed79c69ac7ba1d031305e081088cbc424e3aacf", [:make, :rebar3], [{:recon, "2.3.2", [hex: :recon, optional: false]}]},
   "rabbitmq_sender": {:hex, :rabbitmq_sender, "0.1.4", "6deda7ebdb7578509d2071ff5be6aa64e6bc3e11c11f6da6cb8148627004c8f3", [:mix], [{:amqp, "~> 0.2.1", [hex: :amqp, optional: false]}]},
   "recon": {:hex, :recon, "2.3.2", "4444c879be323b1b133eec5241cb84bd3821ea194c740d75617e106be4744318", [:rebar3], []},
