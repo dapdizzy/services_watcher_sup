@@ -15,7 +15,9 @@ config :service_watcher_sup,
   bot_queue: "bot_queue",
   notify_destination: "dpyatkov",
   default_watch_interval: 5000,
-  scripts_folder: "C:/AX/BuildScripts"
+  scripts_folder: "C:/AX/BuildScripts",
+  slack_sender_url: "http://axstage01.mediasaturnrussia.ru:17000/api/slack_sender",
+  services: ["aspnet_state"]
 
 # This configuration is loaded before any dependency and is restricted
 # to this project. If another project depends on this project, this

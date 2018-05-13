@@ -232,8 +232,13 @@ defmodule Service.Watcher do
   # Helpers
   def ingify(str), do: unless str |> String.downcase |> String.ends_with?(["ing", "ed"]), do: (if ~r/[^p]{1}p$/ |> Regex.match?(str), do: str <> "p", else: str) <> "ing", else: str
   def send_message(message, destination) do
-    bot_queue = Application.get_env(:service_watcher_sup, :bot_queue, "bot_queue")
-    RabbitMQSender |> RabbitMQSender.send_message(bot_queue, "#{destination}::#{message}")
+    slack_sender_url = Application.get_env(:service_watcher_sup, :slack_sender_url)
+    unless slack_sender_url, do: raise "slack_sender_url is not configured for service_watcher_sup"
+    HTTPotion.post! slack_sender_url,
+      body: ~s|{"message": "#{destination}::#{message}"}|,
+      headers: [{"Content-Type", "application/json"}]
+    # bot_queue = Application.get_env(:service_watcher_sup, :bot_queue, "bot_queue")
+    # RabbitMQSender |> RabbitMQSender.send_message(bot_queue, "#{destination}::#{message}")
   end
   def service_name_alias(service_name) do
     {:via, Registry, {NamesRegistry, service_name}}

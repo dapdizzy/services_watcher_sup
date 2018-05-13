@@ -8,12 +8,14 @@ defmodule Service.Watcher.Application do
   use Application
 
   def start(_type, _args) do
+    services = Application.get_env(:service_watcher_sup, :services, [])
+      |> Enum.map(fn name -> %Service.Def{service_name: name, mode: :on, timeout: 5_000} end)
     # List all child processes to be supervised
     children = [
-      worker(RabbitMQSender, [[], [name: RabbitMQSender]]),
+      # worker(RabbitMQSender, [[], [name: RabbitMQSender]]),
       worker(Registry, [[keys: :unique, name: NamesRegistry]], [name: NamesRegistry]),
       supervisor(JobSupervisor, []),
-      worker(Service.Watcher, [[], [name: Service.Watcher]])
+      worker(Service.Watcher, [services, [name: Service.Watcher]])
       # Starts a worker by calling: Service.Watcher.Worker.start_link(arg)
       # {Service.Watcher.Worker, arg},
     ]
