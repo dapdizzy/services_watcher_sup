@@ -17,7 +17,7 @@ config :service_watcher_sup,
   default_watch_interval: 5000,
   scripts_folder: "C:/AX/BuildScripts",
   slack_sender_url: "http://axstage01.mediasaturnrussia.ru:17000/api/slack_sender",
-  services: ["aspnet_state"]
+  services: ["AOS60$05", "AOS60$06"]
 
 # This configuration is loaded before any dependency and is restricted
 # to this project. If another project depends on this project, this

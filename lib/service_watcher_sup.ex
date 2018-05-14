@@ -60,7 +60,7 @@ defmodule Service.Watcher do
         end
         # TODO: possible use update_interval_period here to adjust interval/period of a TimerJob
         # Update args list to allow proper handling of status changes (we need to track prev_status and stuff).
-        service_name |> update_interval_period(
+        service_name |> update_timer_state(
         %TimerJob
         {
           args:
