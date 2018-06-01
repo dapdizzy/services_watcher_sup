@@ -1,9 +1,10 @@
 defmodule Services do
-  def start_service(service_name) do
+  def start_service(service_name, computer_name) do
+    # computer_name = Application.get_env(:service_watcher_sup, :computer_name)
     scripts_dir = Application.get_env(:service_watcher_sup, :scripts_folder)
     scripts_dir |> File.cd!
     File.cwd! |> IO.puts
-    ps = ~s/powershell .\\Call-StartService.ps1 '#{service_name}'/
+    ps = ~s/powershell .\\Call-StartService.ps1 '#{service_name}' '#{computer_name}'/
     IO.puts "PS: #{ps}"
     ps
       |> String.to_char_list
@@ -12,11 +13,12 @@ defmodule Services do
       |> extract_word
   end
 
-  def stop_service(service_name) do
+  def stop_service(service_name, computer_name) do
+    # computer_name = Application.get_env(:service_watcher_sup, :computer_name)
     scripts_dir = Application.get_env(:service_watcher_sup, :scripts_folder)
     scripts_dir |> File.cd!
     File.cwd! |> IO.puts
-    ps = ~s|powershell .\\Call-StopService.ps1 '#{service_name}'|
+    ps = ~s|powershell .\\Call-StopService.ps1 '#{service_name}' '#{computer_name}'|
     IO.puts "PS: #{ps}"
     ps
       |> String.to_char_list
@@ -25,11 +27,12 @@ defmodule Services do
       |> extract_word
   end
 
-  def get_service_state(service_name) do
+  def get_service_state(service_name, computer_name) do
+    # computer_name = Application.get_env(:service_watcher_sup, :computer_name)
     scripts_dir = Application.get_env(:service_watcher_sup, :scripts_folder)
     scripts_dir |> File.cd!
     File.cwd! |> IO.puts
-    ps = ~s/powershell .\\Get-ServiceState.ps1 '#{service_name}'/
+    ps = ~s/powershell .\\Get-ServiceState.ps1 '#{service_name}' '#{computer_name}'/
     IO.puts  "PS: #{ps}"
     ps
       |> String.to_char_list

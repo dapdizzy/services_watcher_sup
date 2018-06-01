@@ -25,27 +25,28 @@ defmodule Service.Watcher do
     GenServer.start_link(__MODULE__, [services], gen_server_options)
   end
 
-  def start_watching(service_name, mode, watch_interval) do
+  def start_watching(service_name, computer_name, mode, watch_interval) do
     ok_state = mode |> Services.mode_to_service_state
     notify_destination = Application.get_env(:service_watcher_sup, :notify_destination, "")
     effective_watch_interval = watch_interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
-    JobSupervisor.start_child(service_name, __MODULE__, :watch_service, [service_name, mode, ok_state, nil, notify_destination, effective_watch_interval, :infinity], effective_watch_interval, :infinity, false)
+    JobSupervisor.start_child(service_name |> job_name(computer_name), __MODULE__, :watch_service, [service_name, computer_name, mode, ok_state, nil, notify_destination, effective_watch_interval, :infinity], effective_watch_interval, :infinity, false)
   end
 
-  def watch_service(service_name, mode, expected_state, prev_state, notify_destination, watch_interval \\ 5000, expiration_period \\ :infinity) do
+  def watch_service(service_name, computer_name, mode, expected_state, prev_state, notify_destination, watch_interval \\ 5000, expiration_period \\ :infinity) do
     interim_state = mode |> Services.mode_to_interim_state
-    case service_name |> Services.get_service_state do
+    case service_name |> Services.get_service_state(computer_name) do
       ^expected_state ->
         unless !prev_state || prev_state == expected_state do
-          send_message "Service *#{service_name}* is now *#{expected_state}*", notify_destination
+          send_message "Service *#{service_name}* on *#{computer_name}* is now *#{expected_state}*", notify_destination
         end
         # Update args (prev_status in particular) to maintain proper status change handling.
-        service_name |> update_timer_state(
+        service_name |> job_name(computer_name) |> update_timer_state(
         %TimerJob
         {
           args:
             [
               service_name,
+              computer_name,
               mode,
               expected_state,
               expected_state,
@@ -56,16 +57,17 @@ defmodule Service.Watcher do
         })
       ^interim_state ->
         if !prev_state || prev_state != interim_state do
-          send_message "Service *#{service_name}* is now *#{ingify interim_state}*", notify_destination
+          send_message "Service *#{service_name}* on *#{computer_name}* is now *#{ingify interim_state}*", notify_destination
         end
         # TODO: possible use update_interval_period here to adjust interval/period of a TimerJob
         # Update args list to allow proper handling of status changes (we need to track prev_status and stuff).
-        service_name |> update_timer_state(
+        service_name |> job_name(computer_name) |> update_timer_state(
         %TimerJob
         {
           args:
             [
               service_name,
+              computer_name,
               mode,
               expected_state,
               interim_state,
@@ -77,22 +79,23 @@ defmodule Service.Watcher do
         # :timer.apply_after watch_interval, __MODULE__, :watch_service, [service_name, mode, expected_state, interim_state, notify_destination, watch_interval, (if expiration_period == :infinity || !prev_state || prev_state != interim_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)]
       other_state ->
         if !prev_state || prev_state != other_state do
-          send_message "Service *#{service_name}* is now *#{ingify other_state}*", notify_destination
+          send_message "Service *#{service_name}* on *#{computer_name}* is now *#{ingify other_state}*", notify_destination
           action_verb = mode |> Services.mode_to_action_verb
-          send_message "Trying to *#{action_verb}* service *#{service_name}*", notify_destination
+          send_message "Trying to *#{action_verb}* service *#{service_name}* on *#{computer_name}*", notify_destination
           action = "#{action_verb}_service" |> String.to_atom
-          res = apply Services, action, [service_name]
+          res = apply Services, action, [service_name, computer_name]
           send_message "*#{action}* exited with code *#{res}*", notify_destination
         end
         # TODO: possible use update_interval_period here to adjust interval/period of a TimerJob
         # :timer.apply_after watch_interval, __MODULE__, :watch_service, [service_name, mode, expected_state, other_state, notify_destination, watch_interval, (if expiration_period == :infinity || !prev_state || prev_state != other_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)]
         # Update args in order to maintain proper prev_status to handle status changes gracefuly.
-        service_name |> update_timer_state(
+        service_name |> job_name(computer_name) |> update_timer_state(
         %TimerJob
         {
           args:
             [
               service_name,
+              computer_name,
               mode,
               expected_state,
               other_state,
@@ -104,12 +107,12 @@ defmodule Service.Watcher do
     end
     # debug
     if Application.get_env(:service_watcher_sup, :debug, false) do
-      send_message "I'm watching *#{service_name}* to be *#{mode}*", notify_destination
+      send_message "I'm watching *#{service_name}* on *#{computer_name}* to be *#{mode}*", notify_destination
     end
   end
 
-  def service_to_string(%Def{service_name: service_name, mode: mode, timeout: interval}) do
-    "Watching [#{service_name}] to be #{mode} every #{interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
+  def service_to_string(%Def{service_name: service_name, mode: mode, timeout: interval, computer_name: computer_name}) do
+    "Watching [#{service_name}] on *#{computer_name}* to be #{mode} every #{interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
     # case service do
     #   {service_name, mode} ->
     #     "Watching [#{service_name}] to be #{mode} every #{Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)} ms"
@@ -127,20 +130,20 @@ defmodule Service.Watcher do
     server |> GenServer.call(:services_def)
   end
 
-  def add_service(server \\ __MODULE__, service_name, mode, timeout \\ Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)) do
-    server |> GenServer.cast({:add_service, service_name, mode, timeout})
+  def add_service(server \\ __MODULE__, service_name, computer_name, mode, timeout \\ Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)) do
+    server |> GenServer.cast({:add_service, service_name, computer_name, mode, timeout})
   end
 
-  def stop_watching(server \\ __MODULE__, service_name) do
-    server |> GenServer.cast({:stop_watching, service_name})
+  def stop_watching(server \\ __MODULE__, service_name, computer_name) do
+    server |> GenServer.cast({:stop_watching, service_name, computer_name})
   end
 
-  def pause(server \\ __MODULE__, service_name) do
-    server |> GenServer.cast({:pause, service_name})
+  def pause(server \\ __MODULE__, service_name, computer_name) do
+    server |> GenServer.cast({:pause, service_name, computer_name})
   end
 
-  def resume(server \\ __MODULE__, service_name) do
-    server |> GenServer.cast({:resume, service_name})
+  def resume(server \\ __MODULE__, service_name, computer_name) do
+    server |> GenServer.cast({:resume, service_name, computer_name})
   end
 
   def pause_all(server \\ __MODULE__) do
@@ -153,8 +156,8 @@ defmodule Service.Watcher do
 
   #Callbacks
   def init([services]) do
-    for %Def{service_name: service_name, mode: mode, timeout: interval} <- services do
-      start_watching service_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
+    for %Def{service_name: service_name, mode: mode, timeout: interval, computer_name: computer_name} <- services do
+      start_watching service_name, computer_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
       # case service do
       #   {service_name, mode} ->
       #     start_watching service_name, mode, Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
@@ -176,21 +179,21 @@ defmodule Service.Watcher do
     {:reply, services, state}
   end
 
-  def handle_cast({:add_service, service_name, mode, timeout}, %Service.Watcher{services: services} = state) do
-    start_watching service_name, mode, timeout
-    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout, state: :active}|services]}}
+  def handle_cast({:add_service, service_name, computer_name, mode, timeout}, %Service.Watcher{services: services} = state) do
+    start_watching service_name, computer_name, mode, timeout
+    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout, state: :active, computer_name: computer_name}|services]}}
   end
 
-  def handle_cast({:stop_watching, service_name}, %Service.Watcher{services: services} = state) do
-    service_name |> stop_timer_job()
-    {:noreply, %{state|services: services |> Enum.reject(fn %Def{service_name: ^service_name} -> true; _ -> false end)}}
+  def handle_cast({:stop_watching, service_name, computer_name}, %Service.Watcher{services: services} = state) do
+    service_name |> job_name(computer_name) |> stop_timer_job()
+    {:noreply, %{state|services: services |> Enum.reject(fn %Def{service_name: ^service_name, computer_name: ^computer_name} -> true; _ -> false end)}}
   end
 
-  def handle_cast({:pause, service_name}, %Service.Watcher{services: services} = state) do
-    service_name |> pause_timer_job()
+  def handle_cast({:pause, service_name, computer_name}, %Service.Watcher{services: services} = state) do
+    service_name |> job_name(computer_name) |> pause_timer_job()
     {:noreply, %{state|services: services |> Enum.map(
       fn
-        %Def{service_name: ^service_name} = service ->
+        %Def{service_name: ^service_name, computer_name: ^computer_name} = service ->
           %{service|state: :inactive}
         ;
         service -> service
@@ -198,11 +201,11 @@ defmodule Service.Watcher do
     )}}
   end
 
-  def handle_cast({:resume, service_name}, %Service.Watcher{services: services} = state) do
-    service_name |> resume_timer_job()
+  def handle_cast({:resume, service_name, computer_name}, %Service.Watcher{services: services} = state) do
+    service_name |> job_name(computer_name) |> resume_timer_job()
     {:noreply, %{state|services: services |> Enum.map(
       fn
-        %Def{service_name: ^service_name} = service ->
+        %Def{service_name: ^service_name, computer_name: ^computer_name} = service ->
           %{service|state: :active}
         ;
         service ->
@@ -213,8 +216,8 @@ defmodule Service.Watcher do
 
   def handle_cast(:pause_all, %Service.Watcher{services: services} = state) do
     upd_services =
-      for %Def{service_name: service_name} = service <- services do
-        service_name |> pause_timer_job()
+      for %Def{service_name: service_name, computer_name: computer_name} = service <- services do
+        service_name |> job_name(computer_name) |> pause_timer_job()
         %{service|state: :inactive}
       end
     {:noreply, %{state|services: upd_services}}
@@ -222,8 +225,8 @@ defmodule Service.Watcher do
 
   def handle_cast(:resume_all, %Service.Watcher{services: services} = state) do
     upd_services =
-      for %Def{service_name: service_name} = service <- services do
-        service_name |> resume_timer_job()
+      for %Def{service_name: service_name, computer_name: computer_name} = service <- services do
+        service_name |> job_name(computer_name) |> resume_timer_job()
         %{service|state: :active}
       end
     {:noreply, %{state|services: upd_services}}
@@ -234,9 +237,23 @@ defmodule Service.Watcher do
   def send_message(message, destination) do
     slack_sender_url = Application.get_env(:service_watcher_sup, :slack_sender_url)
     unless slack_sender_url, do: raise "slack_sender_url is not configured for service_watcher_sup"
-    HTTPotion.post! slack_sender_url,
-      body: ~s|{"message": "#{destination}::#{message}"}|,
-      headers: [{"Content-Type", "application/json"}]
+    proxy = Application.get_env(:service_watcher_sup, :proxy)
+    username = Application.get_env(:service_watcher_sup, :username)
+    password = Application.get_env(:service_watcher_sup, :password)
+    # IO.puts "Going to submit request with the following options:"
+    # IO.puts "proxy: #{proxy}"
+    # IO.puts "username: #{username}"
+    # IO.puts "password: #{password}"
+    HTTPoison.post!(
+      slack_sender_url,
+      ~s|{"message": "#{destination}::#{message}"}|,
+      [{"Content-Type", "application/json"}],
+      proxy: proxy,
+      proxy_auth: {username, password}
+      )
+    # HTTPotion.post! slack_sender_url,
+    #   body: ~s|{"message": "#{destination}::#{message}"}|,
+    #   headers: [{"Content-Type", "application/json"}]
     # bot_queue = Application.get_env(:service_watcher_sup, :bot_queue, "bot_queue")
     # RabbitMQSender |> RabbitMQSender.send_message(bot_queue, "#{destination}::#{message}")
   end
@@ -262,5 +279,8 @@ defmodule Service.Watcher do
   def resume_timer_job(service_name) do
     service_name |> service_name_alias()
       |> TimerJob.run()
+  end
+  def job_name(service_name, computer_name) do
+    "#{service_name}_on_#{computer_name}"
   end
 end

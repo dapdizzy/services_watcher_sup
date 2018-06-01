@@ -9,7 +9,7 @@ defmodule Service.Watcher.Application do
 
   def start(_type, _args) do
     services = Application.get_env(:service_watcher_sup, :services, [])
-      |> Enum.map(fn name -> %Service.Def{service_name: name, mode: :on, timeout: 5_000} end)
+      |> Enum.map(fn {name, computer_name} -> %Service.Def{service_name: name, mode: :on, timeout: 5_000, computer_name: computer_name} end)
     # List all child processes to be supervised
     children = [
       # worker(RabbitMQSender, [[], [name: RabbitMQSender]]),
