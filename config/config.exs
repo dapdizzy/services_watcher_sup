@@ -2,6 +2,11 @@
 # and its dependencies with the aid of the Mix.Config module.
 use Mix.Config
 
+config :cipher,
+  keyphrase: "testiekeyphraseforcipher",
+  ivphrase: "testieivphraseforcipher",
+  magic_token: "magictoken"
+
 config :rabbitmq_sender,
   rabbit_options:
     [
@@ -16,12 +21,11 @@ config :service_watcher_sup,
   notify_destination: "dpyatkov",
   default_watch_interval: 5000,
   scripts_folder: "C:/AX/BuildScripts",
-  slack_sender_url: "http://dummy.mediasaturnrussia.ru:17000/api/slack_sender",
+  slack_sender_url: "http://axstage01.mediasaturnrussia.ru:17000/api/slack_sender",
   services: [{"AOS60$05", "MOW04DEV014"}, {"AOS60$06", "MOW04DEV014"}, {"aspnet_state", "MOW04DEV014"}, {"AOS60$02", "MOW04DEV014"}],
-  proxy: "http://bunny.media-saturn.com:80",
+  proxy: "http://bluecoat.media-saturn.com:80",
   username: "pyatkov",
-  password: "mecko!",
-  computer_name: "zeko"
+  computer_name: "MOW04APPAX02"
 
 # This configuration is loaded before any dependency and is restricted
 # to this project. If another project depends on this project, this
