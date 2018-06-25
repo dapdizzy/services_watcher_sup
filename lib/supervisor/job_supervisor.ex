@@ -8,12 +8,30 @@ defmodule JobSupervisor do
   end
 
   def start_child(service_name, module, function, args, interval, period \\ :infinity, spawn_on_call \\ false) do
-    spec = Supervisor.Spec.worker(
-      TimerJob,
-      [
-        module, function, args, interval, period, spawn_on_call,
-        [name: service_name_alias(service_name)]
-      ], [restart: :transient])
+    name_alias = service_name_alias(service_name)
+    spec =
+      %{
+        id: name_alias,
+        start:
+          {
+            TimerJob,
+            :start_link,
+            [
+              module, function, args, interval, period, spawn_on_call,
+              [name: name_alias]
+            ]
+          },
+        restart: :permanent
+      }
+    # spec = Supervisor.Spec.worker(
+    #   TimerJob,
+    #   [
+    #     module, function, args, interval, period, spawn_on_call,
+    #     [name: name_alias]
+    #   ], [restart: :permanent])
+    IO.puts "spec is: #{inspect spec}"
+    spec = spec |> Supervisor.child_spec(id: name_alias)
+    IO.puts "updated spec: #{inspect spec}"
     child = DynamicSupervisor.start_child(__MODULE__, spec)
     case child do
       {:ok, pid} ->

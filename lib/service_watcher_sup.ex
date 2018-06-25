@@ -3,6 +3,8 @@ defmodule Service.Watcher do
 
   alias Service.Def
 
+  import Helpers
+
   defstruct [:services]
   @moduledoc """
   Documentation for Service.Watcher.
@@ -25,11 +27,12 @@ defmodule Service.Watcher do
     GenServer.start_link(__MODULE__, [services], gen_server_options)
   end
 
-  def start_watching(service_name, computer_name, mode, watch_interval) do
+  def start_watching(service_name, computer_name, mode, watch_interval, notify_destination) do
     ok_state = mode |> Services.mode_to_service_state
-    notify_destination = Application.get_env(:service_watcher_sup, :notify_destination, "")
+    # notify_destination = Application.get_env(:service_watcher_sup, :notify_destination, "")
     effective_watch_interval = watch_interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
     JobSupervisor.start_child(service_name |> job_name(computer_name), __MODULE__, :watch_service, [service_name, computer_name, mode, ok_state, nil, notify_destination, effective_watch_interval, :infinity], effective_watch_interval, :infinity, false)
+    # :timer.sleep(100) # Sleep some 100ms to give the processes some temporal space inbetween
   end
 
   def watch_service(service_name, computer_name, mode, expected_state, prev_state, notify_destination, watch_interval \\ 5000, expiration_period \\ :infinity) do
@@ -122,7 +125,7 @@ defmodule Service.Watcher do
   end
 
   #API
-  def get_services(server \\ __MODULE__) do
+  def get_services(server \\ __MODULE__, with_markup \\ false) do
     server |> GenServer.call(:services)
   end
 
@@ -130,8 +133,8 @@ defmodule Service.Watcher do
     server |> GenServer.call(:services_def)
   end
 
-  def add_service(server \\ __MODULE__, service_name, computer_name, mode, timeout \\ Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)) do
-    server |> GenServer.cast({:add_service, service_name, computer_name, mode, timeout})
+  def add_service(server \\ __MODULE__, service_name, computer_name, mode, timeout \\ Application.get_env(:service_watcher_sup, :default_watch_interval, 5000), notify_destination \\ Application.get_env(:service_watcher_sup, :notify_destination)) do
+    server |> GenServer.cast({:add_service, service_name, computer_name, mode, timeout, notify_destination})
   end
 
   def stop_watching(server \\ __MODULE__, service_name, computer_name) do
@@ -156,8 +159,8 @@ defmodule Service.Watcher do
 
   #Callbacks
   def init([services]) do
-    for %Def{service_name: service_name, mode: mode, timeout: interval, computer_name: computer_name} <- services do
-      start_watching service_name, computer_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
+    for %Def{service_name: service_name, mode: mode, timeout: interval, computer_name: computer_name, notify_destination: notify_destination} <- services do
+      start_watching service_name, computer_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000), notify_destination
       # case service do
       #   {service_name, mode} ->
       #     start_watching service_name, mode, Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
@@ -165,6 +168,9 @@ defmodule Service.Watcher do
       #     start_watching service_name, mode, interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
       # end
     end
+    # Send a deferred register command to the "supervisor_man_queue" queue.
+    command = %{command: "register", args: %{identity: identity()}} |> Poison.encode!
+    # :timer.apply_after 3_000, RabbitMQSender, :send_message, [RabbitMQSender, "supervisor_man_queue", command]
     {:ok, %Service.Watcher{services: services}}
   end
 
@@ -179,9 +185,9 @@ defmodule Service.Watcher do
     {:reply, services, state}
   end
 
-  def handle_cast({:add_service, service_name, computer_name, mode, timeout}, %Service.Watcher{services: services} = state) do
-    start_watching service_name, computer_name, mode, timeout
-    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout, state: :active, computer_name: computer_name}|services]}}
+  def handle_cast({:add_service, service_name, computer_name, mode, timeout, notify_destination}, %Service.Watcher{services: services} = state) do
+    start_watching service_name, computer_name, to_atom_mode(mode), timeout, notify_destination
+    {:noreply, %{state|services: [%Def{service_name: service_name, mode: mode, timeout: timeout, state: :active, computer_name: computer_name, notify_destination: notify_destination}|services]}}
   end
 
   def handle_cast({:stop_watching, service_name, computer_name}, %Service.Watcher{services: services} = state) do
@@ -234,23 +240,39 @@ defmodule Service.Watcher do
 
   # Helpers
   def ingify(str), do: unless str |> String.downcase |> String.ends_with?(["ing", "ed"]), do: (if ~r/[^p]{1}p$/ |> Regex.match?(str), do: str <> "p", else: str) <> "ing", else: str
+  def send_message(message, [_h|_t] = destinations) do
+    destinations |> Enum.each(fn destination ->
+      IO.puts "Going to sleep 100 ms"
+      # :timer.sleep(100)
+      IO.puts "Slept 100 ms"
+      send_message(message, destination)
+    end)
+  end
   def send_message(message, destination) do
     slack_sender_url = Application.get_env(:service_watcher_sup, :slack_sender_url)
     unless slack_sender_url, do: raise "slack_sender_url is not configured for service_watcher_sup"
-    proxy = Application.get_env(:service_watcher_sup, :proxy)
-    username = Application.get_env(:service_watcher_sup, :username)
-    password = Application.get_env(:service_watcher_sup, :password)
+    proxy = Application.get_env(:service_watcher_sup, :proxy, nil)
+    username = Application.get_env(:service_watcher_sup, :username, nil)
+    password = Application.get_env(:service_watcher_sup, :password, nil)
     # IO.puts "Going to submit request with the following options:"
     # IO.puts "proxy: #{proxy}"
     # IO.puts "username: #{username}"
     # IO.puts "password: #{password}"
-    HTTPoison.post!(
-      slack_sender_url,
-      ~s|{"message": "#{destination}::#{message}"}|,
-      [{"Content-Type", "application/json"}],
-      proxy: proxy,
-      proxy_auth: {username, password}
-      )
+    headers = [{"Content-Type", "application/json"}]
+      |> enrich_options(proxy, username, password)
+    IO.puts "Headers before slack_sender call are: #{inspect headers}"
+    payload = %{message: "#{destination}::#{message}"} |> Poison.encode!
+      # ~s|{"message": "#{destination}::#{message}"}|
+    IO.puts "Payload is #{payload}"
+    result =
+      HTTPHelper.post slack_sender_url, payload #, proxy, username, password
+      # HTTPoison.post!(
+      #   slack_sender_url,
+      #   payload,
+      #   [{"Content-Type", "application/json"}]
+      #     |> enrich_options(proxy, username, password)
+      #   )
+    IO.puts "HTTP.post! result: #{inspect result}"
     # HTTPotion.post! slack_sender_url,
     #   body: ~s|{"message": "#{destination}::#{message}"}|,
     #   headers: [{"Content-Type", "application/json"}]
@@ -282,5 +304,23 @@ defmodule Service.Watcher do
   end
   def job_name(service_name, computer_name) do
     "#{service_name}_on_#{computer_name}"
+  end
+
+  defp to_atom_mode(mode) when mode |> is_binary() do
+    mode |> String.to_atom()
+  end
+
+  defp to_atom_mode(mode) when mode |> is_atom() do
+    mode
+  end
+
+  def identity do
+    Application.get_env(:service_watcher_sup, :identity)
+  end
+
+  def ident do
+    identity = identity()
+    watching_services = unless (services = get_services()) != "", do: "[*no services*]", else: services
+    "Supervisor identity *#{identity}*, watching services: #{watching_services}"
   end
 end
