@@ -22,6 +22,6 @@
   "rabbitmq_sender": {:hex, :rabbitmq_sender, "0.1.4", "6deda7ebdb7578509d2071ff5be6aa64e6bc3e11c11f6da6cb8148627004c8f3", [:mix], [{:amqp, "~> 0.2.1", [hex: :amqp, repo: "hexpm", optional: false]}], "hexpm"},
   "recon": {:hex, :recon, "2.3.2", "4444c879be323b1b133eec5241cb84bd3821ea194c740d75617e106be4744318", [:rebar3], [], "hexpm"},
   "ssl_verify_fun": {:hex, :ssl_verify_fun, "1.1.1", "28a4d65b7f59893bc2c7de786dec1e1555bd742d336043fe644ae956c3497fbe", [:make, :rebar], [], "hexpm"},
-  "timer_job": {:hex, :timer_job, "0.1.3", "b43b3390b31495cc6ce205b4827a27ac3d15515ca24c2c1882f9c862c6220fa3", [:mix], [], "hexpm"},
+  "timer_job": {:hex, :timer_job, "0.1.6", "f397bc5e69d5706654d0b3605c1ae649a1e589ceb1535d7fd8ae953a9ab8e3b0", [:mix], [], "hexpm"},
   "unicode_util_compat": {:hex, :unicode_util_compat, "0.3.1", "a1f612a7b512638634a603c8f401892afbf99b8ce93a45041f8aaca99cadb85e", [:rebar3], [], "hexpm"},
 }

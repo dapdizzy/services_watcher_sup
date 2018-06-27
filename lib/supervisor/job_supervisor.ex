@@ -18,7 +18,8 @@ defmodule JobSupervisor do
             :start_link,
             [
               module, function, args, interval, period, spawn_on_call,
-              [name: name_alias]
+              [name: name_alias],
+              true
             ]
           },
         restart: :permanent
@@ -42,7 +43,10 @@ defmodule JobSupervisor do
   end
 
   def init([strategy]) do
-    DynamicSupervisor.init(strategy: strategy)
+    IO.puts "Initializing the #{__MODULE__}, the strategy is #{strategy}"
+    x = DynamicSupervisor.init(strategy: strategy)
+    IO.puts "DynamicSupervisor.init(strategy: #{strategy}) returned #{inspect x}"
+    x
   end
 
 end

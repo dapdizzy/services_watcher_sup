@@ -20,8 +20,14 @@ defmodule Helpers do
   def post(url, payload, proxy, username, password) do
     headers = build_headers # proxy, username, password
     IO.puts "Headers: #{inspect headers}"
-    options = build_options proxy, username, password
-    IO.puts "Options: #{inspect options}"
+    options =
+      if proxy && username do
+        options = build_options proxy, username, password
+        IO.puts "Options: #{inspect options}"
+        options
+      else
+        []
+      end
     %HTTPoison.Response{status_code: 200, body: body} = HTTPoison.post! url, payload, headers, options
     body
   end

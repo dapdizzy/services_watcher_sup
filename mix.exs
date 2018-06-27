@@ -28,7 +28,7 @@ defmodule Service.Watcher.MixProject do
       # {:httpotion, "~> 3.1"},
       {:httpoison, "~> 1.1"},
       {:rabbitmq_sender, "~> 0.1.4"},
-      {:timer_job, "~> 0.1.3"},
+      {:timer_job, "~> 0.1.6"},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:distillery, "~> 1.5", runtime: false},
       {:cipher, "~> 1.3"},

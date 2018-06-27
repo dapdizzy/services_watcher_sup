@@ -51,11 +51,13 @@ defmodule Service.Watcher.Application do
     Application.put_env(:service_watcher_sup, :password, password)
     username = Application.get_env(:service_watcher_sup, :username)
     proxy = Application.get_env(:service_watcher_sup, :proxy)
-    uri = proxy |> URI.parse()
-    proxy_w_cred = %{uri|host: "#{username}:#{password}@#{uri.host}"} |> URI.to_string() |> String.replace(["[", "]"], "")
-    IO.puts "proxy_w_cred: #{proxy_w_cred}"
-    System.put_env("http_proxy", proxy_w_cred)
-    System.put_env("https_proxy", proxy_w_cred)
+    if proxy do
+      uri = proxy |> URI.parse()
+      proxy_w_cred = %{uri|host: "#{username}:#{password}@#{uri.host}"} |> URI.to_string() |> String.replace(["[", "]"], "")
+      IO.puts "proxy_w_cred: #{proxy_w_cred}"
+      System.put_env("http_proxy", proxy_w_cred)
+      System.put_env("https_proxy", proxy_w_cred)
+    end
     rabbit_connection_options = Application.get_env(:rabbitmq_sender, :rabbit_options)
     # List all child processes to be supervised
     children = [
@@ -65,8 +67,8 @@ defmodule Service.Watcher.Application do
       worker(HTTPHelper, [proxy, username, password]),
       worker(Service.Watcher, [services, [name: Service.Watcher]]),
       # worker(RabbitMQReceiver, [rabbit_connection_options, "", ManagementCommandsProcessor, :process_command, true, [name: RabbitMQReceiver], [exchange: "supervisors_commands_exchange", exchange_type: :topic, binding_keys: ["commands", "commands.#{identity}"]]]),
-      # worker(Poller, [], id: Poller),
-      # worker(TimerJob, [Poller, :poll_for_commands, [], 500, :infinity, false, [name: PollJob]], id: PollerJob),
+      worker(Poller, [], id: Poller),
+      worker(TimerJob, [Poller, :poll_for_commands, [], 500, :infinity, false, [name: PollJob], true], id: PollerJob),
       # worker(RabbitMQSender, [rabbit_connection_options, [name: RabbitMQSender]])
       # Starts a worker by calling: Service.Watcher.Worker.start_link(arg)
       # {Service.Watcher.Worker, arg},

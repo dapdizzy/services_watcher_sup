@@ -16,22 +16,24 @@ config :rabbitmq_sender,
       password: "hunky"
     ]
 
+comp_name = "ax" <> "stage" <> "0" <> "1"
+
 config :service_watcher_sup,
   cwd: "",
   bot_queue: "bot_queue",
   notify_destination: ["dpyatkov", "zheleznov", "laputin"],
   default_watch_interval: 5000,
   scripts_folder: "C:/AX/BuildScripts",
-  slack_sender_url: "http://axstage01.mediasaturnrussia.ru:17000/api/slack_sender",
+  slack_sender_url: "http://#{comp_name}.mediasaturnrussia.ru:17000/api/slack_sender",
   # {"aspnet_state", "MOW04DEV014", ["dpyatkov"]}
   services: [{"AOS60$05", "MOW04DEV014", ["dpyatkov"]}, {"AOS60$06", "MOW04DEV014", "dpyatkov"}, {"AOS60$02", "MOW04DEV014", "dpyatkov"}, {"aspnet_state", "MOW04DEV014", ["dpyatkov", "zheleznov"]}],
-  proxy: "http://bluecoat.media-saturn.com:80",
+  # proxy: "http://bluecoat.media-saturn.com:80",
   username: "pyatkov",
   computer_name: "MOW04APPAX02",
   # dont_watch_services: true,
   identity: :logistics,
-  commands_poll_url: "http://somestate.mediasaturnrussia.ru:17000/api/slack_receiver",
-  registration_url: "http://somestage.mediasaturnrussia.ru:17000/api/supervisor_registration"
+  commands_poll_url: "http://#{comp_name}.mediasaturnrussia.ru:17000/api/slack_receiver",
+  registration_url: "http://#{comp_name}.mediasaturnrussia.ru:17000/api/supervisor_registration"
 
 # This configuration is loaded before any dependency and is restricted
 # to this project. If another project depends on this project, this
