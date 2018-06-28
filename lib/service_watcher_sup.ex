@@ -239,6 +239,8 @@ defmodule Service.Watcher do
   end
 
   # Helpers
+  def ingify(nil), do: nil
+  def ingify(""), do: ""
   def ingify(str), do: unless str |> String.downcase |> String.ends_with?(["ing", "ed"]), do: (if ~r/[^p]{1}p$/ |> Regex.match?(str), do: str <> "p", else: str) <> "ing", else: str
   def send_message(message, [_h|_t] = destinations) do
     destinations |> Enum.each(fn destination ->
