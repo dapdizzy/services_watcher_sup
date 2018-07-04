@@ -62,13 +62,17 @@ defmodule Service.Watcher.Application do
     # List all child processes to be supervised
     children = [
       # worker(RabbitMQSender, [[], [name: RabbitMQSender]]),
+      worker(DelayManager, [1000 * 60 * 5, 30 * 1000, 1000 * 60 * 10]),
+      supervisor(Task.Supervisor, [[name: Task.Supervisor]]),
+      worker(MessageQueue, []),
       worker(Registry, [[keys: :unique, name: NamesRegistry]], [name: NamesRegistry]),
       supervisor(JobSupervisor, []),
       worker(HTTPHelper, [proxy, username, password]),
       worker(Service.Watcher, [services, [name: Service.Watcher]]),
       # worker(RabbitMQReceiver, [rabbit_connection_options, "", ManagementCommandsProcessor, :process_command, true, [name: RabbitMQReceiver], [exchange: "supervisors_commands_exchange", exchange_type: :topic, binding_keys: ["commands", "commands.#{identity}"]]]),
-      worker(Poller, [], id: Poller),
-      worker(TimerJob, [Poller, :poll_for_commands, [], 500, :infinity, false, [name: PollJob], true], id: PollerJob),
+      worker(PollerMonitor, [30_000, 5, 2], restart: :transient),
+      # worker(Poller, [], id: Poller),
+      # worker(TimerJob, [Poller, :poll_for_commands, [], 500, :infinity, false, [name: PollJob], true], id: PollerJob),
       # worker(RabbitMQSender, [rabbit_connection_options, [name: RabbitMQSender]])
       # Starts a worker by calling: Service.Watcher.Worker.start_link(arg)
       # {Service.Watcher.Worker, arg},

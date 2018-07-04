@@ -5,11 +5,14 @@ defmodule Poller do
 
   # API
 
+  def start() do
+    parameters = get_parameters()
+    GenServer.start(__MODULE__, parameters, name: __MODULE__)
+  end
+
   def start_link() do
-    url = Application.get_env(:service_watcher_sup, :commands_poll_url)
-    identity = Service.Watcher.identity()
-    receiver = "#{identity}"
-    GenServer.start_link(__MODULE__, {url, receiver}, name: __MODULE__)
+    parameters = get_parameters()
+    GenServer.start_link(__MODULE__, parameters, name: __MODULE__)
   end
 
   def poll_for_commands do
@@ -27,6 +30,7 @@ defmodule Poller do
     payload = %{identity: identity, topics: topics} |> Poison.encode!
     registration_result = HTTPHelper.post registration_url, payload # , proxy, username, password
     IO.puts "Registration result: #{inspect registration_result}"
+    process_queued_messages()
     {:ok, %__MODULE__{url: url, receiver: receiver, proxy: proxy, username: username, password: password, topics: topics}}
   end
 
@@ -51,5 +55,16 @@ defmodule Poller do
     headers = build_headers proxy, username, password
     %HTTPoison.Response{status_code: 200, body: body} = HTTPoison.post! url, payload, headers
     body
+  end
+
+  defp get_parameters() do
+    url = Application.get_env(:service_watcher_sup, :commands_poll_url)
+    identity = Service.Watcher.identity()
+    receiver = "#{identity}"
+    {url, receiver}
+  end
+
+  defp process_queued_messages() do
+    HTTPHelper.process_queued_messages()
   end
 end

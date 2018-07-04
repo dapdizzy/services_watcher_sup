@@ -32,13 +32,16 @@ defmodule Service.Watcher do
     # notify_destination = Application.get_env(:service_watcher_sup, :notify_destination, "")
     effective_watch_interval = watch_interval || Application.get_env(:service_watcher_sup, :default_watch_interval, 5000)
     JobSupervisor.start_child(service_name |> job_name(computer_name), __MODULE__, :watch_service, [service_name, computer_name, mode, ok_state, nil, notify_destination, effective_watch_interval, :infinity], effective_watch_interval, :infinity, false)
-    # :timer.sleep(100) # Sleep some 100ms to give the processes some temporal space inbetween
+    # Helpers.sleep(100) # Sleep some 100ms to give the processes some temporal space inbetween
   end
 
   def watch_service(service_name, computer_name, mode, expected_state, prev_state, notify_destination, watch_interval \\ 5000, expiration_period \\ :infinity) do
     interim_state = mode |> Services.mode_to_interim_state
-    case service_name |> Services.get_service_state(computer_name) do
+    service_state = service_name |> Services.get_service_state(computer_name)
+    IO.puts "Service state is: #{service_state}"
+    case service_state do
       ^expected_state ->
+        IO.puts "Expected state"
         unless !prev_state || prev_state == expected_state do
           send_message "Service *#{service_name}* on *#{computer_name}* is now *#{expected_state}*", notify_destination
         end
@@ -59,6 +62,7 @@ defmodule Service.Watcher do
             ]
         })
       ^interim_state ->
+        IO.puts "Interim state"
         if !prev_state || prev_state != interim_state do
           send_message "Service *#{service_name}* on *#{computer_name}* is now *#{ingify interim_state}*", notify_destination
         end
@@ -81,14 +85,17 @@ defmodule Service.Watcher do
         })
         # :timer.apply_after watch_interval, __MODULE__, :watch_service, [service_name, mode, expected_state, interim_state, notify_destination, watch_interval, (if expiration_period == :infinity || !prev_state || prev_state != interim_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)]
       other_state ->
-        if !prev_state || prev_state != other_state do
-          send_message "Service *#{service_name}* on *#{computer_name}* is now *#{ingify other_state}*", notify_destination
-          action_verb = mode |> Services.mode_to_action_verb
-          send_message "Trying to *#{action_verb}* service *#{service_name}* on *#{computer_name}*", notify_destination
-          action = "#{action_verb}_service" |> String.to_atom
-          res = apply Services, action, [service_name, computer_name]
-          send_message "*#{action}* exited with code *#{res}*", notify_destination
-        end
+        IO.puts "Other state"
+        # if !prev_state || prev_state != other_state do
+        #
+        # end
+        # It seems the watcher should always try to take action on a service that is in this "other state" as once the action is takes and in effect, the service should eitehr turn to "expected status" or to "interim status" otherwise we should constantly try to take action every other iteration.
+        send_message "Service *#{service_name}* on *#{computer_name}* is now *#{ingify other_state}*", notify_destination
+        action_verb = mode |> Services.mode_to_action_verb
+        send_message "Trying to *#{action_verb}* service *#{service_name}* on *#{computer_name}*", notify_destination
+        action = "#{action_verb}_service" |> String.to_atom
+        res = apply Services, action, [service_name, computer_name]
+        send_message "*#{action}* exited with code *#{res}*", notify_destination
         # TODO: possible use update_interval_period here to adjust interval/period of a TimerJob
         # :timer.apply_after watch_interval, __MODULE__, :watch_service, [service_name, mode, expected_state, other_state, notify_destination, watch_interval, (if expiration_period == :infinity || !prev_state || prev_state != other_state, do: 5 * 60 * 1000, else: expiration_period - watch_interval)]
         # Update args in order to maintain proper prev_status to handle status changes gracefuly.
@@ -243,14 +250,43 @@ defmodule Service.Watcher do
   def ingify(""), do: ""
   def ingify(str), do: unless str |> String.downcase |> String.ends_with?(["ing", "ed"]), do: (if ~r/[^p]{1}p$/ |> Regex.match?(str), do: str <> "p", else: str) <> "ing", else: str
   def send_message(message, [_h|_t] = destinations) do
-    destinations |> Enum.each(fn destination ->
-      IO.puts "Going to sleep 100 ms"
-      # :timer.sleep(100)
-      IO.puts "Slept 100 ms"
-      send_message(message, destination)
+    destinations |> Enum.reduce(:ok, fn destination, status ->
+      case status do
+        :ok ->
+          send_message(message, destination)
+        :failed ->
+          MessageQueue.enqueue({message, destination}) #Only enqueue the message in case a previous call to send_message resulted in a :failure
+          IO.puts "Enqueued the message #{message} to #{destination}"
+          IO.puts "Will not try to send the message as the previous call resulted in a failure"
+          Helpers.sleep 1_000
+          :failed
+      end
     end)
+    # # In case of multiple destinations, enqueue the messages first
+    # destinations |> Enum.each(fn destination ->
+    #   MessageQueue.enqueue({message, destination})
+    # end)
+    # all_good =
+    #   destinations |> Enum.map(fn destination ->
+    #     send_message(message, destination, true)
+    #   end) |> Enum.all?(&(&1 === :ok))
+    # # Then dequeue them in case send succeded
+    # if all_good do
+    #   destinations |> Enum.each(fn _destination ->
+    #     # Worth noting that there could be issues due to a race condition, as we may dequeue an entry added by some other process.
+    #     # So we better have a queue per calling process (which should be the TimerJob process watching the particular service) and enqueue and dequeue considering the calling process slice.
+    #     MessageQueue.dequeue()
+    #   end)
+    # end
   end
-  def send_message(message, destination) do
+  def send_message(message, destination, skip_queue \\ false) do
+    unless skip_queue do
+      # Drain the queue first
+      HTTPHelper.do_process_queued_messages()
+      MessageQueue.enqueue({message, destination})
+      IO.puts "Message #{message} to #{destination} was queueed"
+      # Helpers.sleep 1_000
+    end
     slack_sender_url = Application.get_env(:service_watcher_sup, :slack_sender_url)
     unless slack_sender_url, do: raise "slack_sender_url is not configured for service_watcher_sup"
     proxy = Application.get_env(:service_watcher_sup, :proxy, nil)
@@ -266,20 +302,44 @@ defmodule Service.Watcher do
     payload = %{message: "#{destination}::#{message}"} |> Poison.encode!
       # ~s|{"message": "#{destination}::#{message}"}|
     IO.puts "Payload is #{payload}"
-    result =
-      HTTPHelper.post slack_sender_url, payload #, proxy, username, password
+    {status, result} =
+      try do
+        r = HTTPHelper.post slack_sender_url, payload #, proxy, username, password
+        unless skip_queue do
+          MessageQueue.dequeue() # Dequeue the recently queued message as it must have been successfuly sent to the queue (as we think here).
+          IO.puts "Message has been dequeued"
+        end
+        {:ok, r}
+      rescue
+        _ ->
+          Helpers.sleep 1_000
+          IO.puts "Rescured raised during a call to send_message"
+          IO.puts "Message #{message} to #{destination} will not be dequeued due to a failure"
+          Helpers.sleep 1_000
+          {:failed, "An error was raised during a call to HTTPHelper.post"}
+      catch
+        :exit, _ ->
+          Helpers.sleep 1_000
+          IO.puts "Rescured exit during a call to send_message"
+          IO.puts "Message #{message} to #{destination} will not be dequeued due to a failure"
+          Helpers.sleep 1_000
+          {:failed, "An error was raised during a call to HTTPHelper.post"}
+      end
+
       # HTTPoison.post!(
       #   slack_sender_url,
       #   payload,
       #   [{"Content-Type", "application/json"}]
       #     |> enrich_options(proxy, username, password)
       #   )
-    IO.puts "HTTP.post! result: #{inspect result}"
+    IO.puts "HTTPHelper.post exited with status: #{status}, result is: #{inspect result}"
+    Helpers.sleep 1_500
     # HTTPotion.post! slack_sender_url,
     #   body: ~s|{"message": "#{destination}::#{message}"}|,
     #   headers: [{"Content-Type", "application/json"}]
     # bot_queue = Application.get_env(:service_watcher_sup, :bot_queue, "bot_queue")
     # RabbitMQSender |> RabbitMQSender.send_message(bot_queue, "#{destination}::#{message}")
+    status
   end
   def service_name_alias(service_name) do
     {:via, Registry, {NamesRegistry, service_name}}

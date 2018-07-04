@@ -4,7 +4,7 @@ defmodule Service.Watcher.MixProject do
   def project do
     [
       app: :service_watcher_sup,
-      version: "0.2.6",
+      version: "0.2.7",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -28,12 +28,13 @@ defmodule Service.Watcher.MixProject do
       # {:httpotion, "~> 3.1"},
       {:httpoison, "~> 1.1"},
       {:rabbitmq_sender, "~> 0.1.4"},
-      {:timer_job, "~> 0.1.6"},
+      {:timer_job, "~> 0.1.7"},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:distillery, "~> 1.5", runtime: false},
       {:cipher, "~> 1.3"},
       {:rabbitmq_receiver, "~> 0.1.6"},
-      {:poison, "~> 3.1"}
+      {:poison, "~> 3.1"},
+      {:gen_retry, "~> 1.0.2"}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"},
     ]

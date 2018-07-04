@@ -31,4 +31,14 @@ defmodule Helpers do
     %HTTPoison.Response{status_code: 200, body: body} = HTTPoison.post! url, payload, headers, options
     body
   end
+
+  def sleep(timout, for_real \\ false)
+
+  def sleep(timeout, true) do
+    :timer.sleep timeout
+  end
+
+  def sleep(_timeout, _) do
+    nil
+  end
 end
